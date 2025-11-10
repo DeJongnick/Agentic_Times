@@ -22,37 +22,6 @@ except ImportError:
     pass
 
 
-class UserRequestSummarizer:
-    """Summarize or extract keywords from a user request using Azure LLM."""
-    def __init__(
-        self, 
-        api_key: Optional[str] = None, 
-        endpoint: Optional[str] = "https://models.github.ai/inference", 
-        model: str = "gpt-4o-mini"
-    ):
-        load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
-        self.api_key = api_key or os.environ.get("GITHUB_APIKEY")
-        if not self.api_key:
-            raise ValueError("Azure API key missing ('GITHUB_APIKEY').")
-        self.llm_client = ChatCompletionsClient(
-            endpoint=endpoint or os.environ.get("AZURE_ENDPOINT", endpoint),
-            credential=AzureKeyCredential(self.api_key)
-        )
-        self.model = model
-
-    def summarize(self, user_request: str, prompt: Optional[str] = None) -> str:
-        """
-        Returns a condensed version (keywords) of the user request.
-        - prompt: custom system prompt, otherwise defaults to keyword extraction.
-        """
-        system_msg = prompt or "Extract only keywords from the user request."
-        resp = self.llm_client.complete(
-            messages=[SystemMessage(system_msg), UserMessage(user_request)],
-            model=self.model
-        )
-        return resp.choices[0].message.content.strip()
-
-
 class UserRequestFormatter:
     """
     Formats a user request (Azure or OpenAI/langchain),
@@ -247,16 +216,3 @@ class AnalyserCollector:
         for source, content in zip(sources, contents):
             results.append({source: content})
         return results
-    
-    def process(self, user_request: str):
-        """
-        Process user request and return corpus context.
-        This method formats the request if a formatter is set, then finds relevant articles.
-        
-        Args:
-            user_request (str): The original user request.
-        
-        Returns:
-            list: List of dictionaries [{article_title: content}]
-        """
-        return self.corpus_context(user_request)

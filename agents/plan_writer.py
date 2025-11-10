@@ -1,35 +1,31 @@
 """
 author: DeJongnick
-name: analyser_collector.py
+name: plan_writer.py
 date: 11/10/2025 (creation)
 """
 
 import os
 from typing import Optional, Literal
+from dotenv import load_dotenv
 
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 
-from dotenv import load_dotenv
-
-LANGCHAIN_AVAILABLE = False
 try:
     from langchain_openai import ChatOpenAI
-    from langchain_core.messages import SystemMessage as LangChainSystemMessage, HumanMessage
-    LANGCHAIN_AVAILABLE = True
+    from langchain_core.messages import SystemMessage as LCSystemMessage, HumanMessage
+    _HAS_LANGCHAIN = True
 except ImportError:
-    pass
-
+    _HAS_LANGCHAIN = False
 
 class PlanWriter:
     """
-    Formats a user request (Azure or OpenAI/langchain),
-    extracts themes/keywords for semantic search.
-    Handles automatic fallback based on API keys.
+    Generate a detailed press article outline from a user request and (optional) context articles.
+    Supports Azure (Github/azure api) or OpenAI (langchain); automatic fallback if allowed.
     """
     def __init__(
-        self, 
+        self,
         provider: Literal["azure", "openai", "auto"] = "auto",
         api_key: Optional[str] = None,
         endpoint: Optional[str] = None,
@@ -37,126 +33,106 @@ class PlanWriter:
         system_prompt: Optional[str] = None,
         allow_fallback: bool = True
     ):
+        # Load environment for API keys
         load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
         self.model = model
+        self.provider = provider if provider != "auto" else self._detect_provider()
         self.allow_fallback = allow_fallback
         self.base_system_prompt = system_prompt or (
-            "You are a helpful assistant specialized in create details plan for press articles. "
-            "Give exhaustive plan with title, subtitles, sources etc."
+            "You are an assistant that writes exhaustive and structured plans for press articles, "
+            "including titles, subtitles, and relevant sources."
         )
-
-        prov = provider if provider != "auto" else self._auto_provider()
-        # Initialize provider, fallback if needed
+        # Initialize LLM client
         try:
-            if prov == "azure":
+            if self.provider == "azure":
                 self._init_azure(api_key, endpoint)
-            elif prov == "openai":
+            elif self.provider == "openai":
                 self._init_openai(api_key)
             else:
-                raise ValueError(f"Unknown provider: {prov}")
-            self.provider = prov
-        except (ValueError, ImportError) as e:
+                raise ValueError(f"Unknown provider: {self.provider}")
+        except Exception as e:
+            # Automatic fallback to the alternative provider if initialization failed
             if allow_fallback and provider != "auto":
-                fallback = "openai" if prov == "azure" else "azure"
-                print(f"Warning: initializing {prov} failed ({e}), falling back to {fallback}")
+                alt = "openai" if self.provider == "azure" else "azure"
                 try:
-                    if fallback == "azure":
+                    if alt == "azure":
                         self._init_azure(None, endpoint)
                     else:
                         self._init_openai(None)
-                    self.provider = fallback
-                except Exception as fb_err:
-                    raise ValueError(
-                        f"Both providers failed. Azure: {e}, OpenAI: {fb_err}. "
-                        "Check your API keys (GITHUB_APIKEY/OPENAI_APIKEY)."
-                    ) from fb_err
+                    self.provider = alt
+                except Exception as e2:
+                    raise ValueError(f"Failed with {self.provider} and {alt}: {e} / {e2}")
             else:
                 raise
 
-    def _auto_provider(self) -> str:
-        """Detects the available provider (Azure if possible, otherwise OpenAI)."""
+    def _detect_provider(self) -> str:
+        """Detect available provider via environment variables."""
         if os.environ.get("GITHUB_APIKEY"):
             return "azure"
         if os.environ.get("OPENAI_APIKEY"):
             return "openai"
-        raise ValueError("No API key found (GITHUB_APIKEY or OPENAI_APIKEY).")
+        raise ValueError("No API key found (GITHUB_APIKEY or OPENAI_APIKEY)")
 
     def _init_azure(self, api_key: Optional[str], endpoint: Optional[str]):
-        self.api_key = api_key or os.environ.get("GITHUB_APIKEY")
-        if not self.api_key:
-            raise ValueError("Azure key missing ('GITHUB_APIKEY')")
+        """Initialize Azure inference client."""
+        key = api_key or os.environ.get("GITHUB_APIKEY")
+        if not key:
+            raise ValueError("Missing Azure key ('GITHUB_APIKEY').")
         self.llm_client = ChatCompletionsClient(
             endpoint=endpoint or os.environ.get("AZURE_ENDPOINT", "https://models.github.ai/inference"),
-            credential=AzureKeyCredential(self.api_key)
+            credential=AzureKeyCredential(key)
         )
 
     def _init_openai(self, api_key: Optional[str]):
-        if not LANGCHAIN_AVAILABLE:
+        """Initialize OpenAI LangChain client."""
+        if not _HAS_LANGCHAIN:
             raise ImportError("langchain_openai is not installed.")
-        self.api_key = api_key or os.environ.get("OPENAI_APIKEY")
-        if not self.api_key:
-            raise ValueError("OpenAI key missing ('OPENAI_APIKEY')")
-        self.llm_client = ChatOpenAI(model=self.model, openai_api_key=self.api_key)
+        key = api_key or os.environ.get("OPENAI_APIKEY")
+        if not key:
+            raise ValueError("Missing OpenAI key ('OPENAI_APIKEY').")
+        self.llm_client = ChatOpenAI(model=self.model, openai_api_key=key)
 
-    def _format_articles_context(self, articles: list) -> str:
-        """
-        Format the articles context for the system prompt.
-        Args:
-            articles: List of dictionaries from analyser_collector.corpus_context()
-                     Format: [{source: content}, ...]
-        Returns:
-            Formatted string with articles context
-        """
+    def _articles_context(self, articles: Optional[list]) -> str:
+        """Format context articles for the system prompt."""
         if not articles:
             return ""
-        
-        context_parts = ["Be inspired by these relevant articles:\n"]
-        for article_dict in articles:
-            for source, content in article_dict.items():
-                # Truncate content if too long (e.g., first 2000 chars)
-                content_preview = content[:2000] + "..." if len(content) > 2000 else content
-                context_parts.append(f"\n--- Source: {source} ---\n{content_preview}\n")
-        
-        return "\n".join(context_parts)
+        context = ["Articles for inspiration:"]
+        for art in articles:
+            for src, content in art.items():
+                # Truncate if content is too long
+                preview = content[:2000] + "..." if len(content) > 2000 else content
+                context.append(f"\n--- Source: {src} ---\n{preview}\n")
+        return "\n".join(context)
 
     def format(self, user_request: str, articles: Optional[list] = None) -> str:
         """
-        Creates a detailed plan based on user request and relevant articles.
-        Args:
-            user_request: The user's request for the article
-            articles: Optional list of articles from analyser_collector.corpus_context()
-                     Format: [{source: content}, ...]
-        Returns:
-            A detailed plan for the article
+        Build a detailed outline for a press article based on the user request and, optionally, context articles.
         """
-        # Build system prompt with articles context if provided
         system_prompt = self.base_system_prompt
         if articles:
-            articles_context = self._format_articles_context(articles)
-            system_prompt = f"{self.base_system_prompt}\n\n{articles_context}"
-        
-        # Build user message that explicitly references the request and articles
+            system_prompt += "\n\n" + self._articles_context(articles)
+        # Build user message with or without articles context
         if articles:
             user_message = (
-                f"Based on the user's request below and the relevant articles provided in the system context, "
-                f"create a comprehensive plan for the article.\n\n"
+                f"Based on the request below and the articles in the system context, "
+                f"write a complete outline for the article.\n\n"
                 f"User request: {user_request}\n\n"
-                f"The plan should include:\n"
-                f"- A compelling title\n"
-                f"- Clear subtitles and sections\n"
-                f"- References to the relevant articles provided\n"
-                f"- A structured outline that addresses the user's request"
+                f"The outline should include:\n"
+                f"- An engaging title\n"
+                f"- Clear subtitles/sections\n"
+                f"- References to context articles\n"
+                f"- A structured plan"
             )
         else:
             user_message = (
-                f"Create a comprehensive plan for the following article request:\n\n"
+                f"Write a complete outline for the following article request:\n\n"
                 f"{user_request}\n\n"
-                f"The plan should include:\n"
-                f"- A compelling title\n"
-                f"- Clear subtitles and sections\n"
-                f"- A structured outline"
+                f"The outline should include:\n"
+                f"- An engaging title\n"
+                f"- Clear subtitles/sections\n"
+                f"- A structured plan"
             )
-        
+        # LLM call depending on provider
         if self.provider == "azure":
             resp = self.llm_client.complete(
                 messages=[SystemMessage(system_prompt), UserMessage(user_message)],
@@ -164,11 +140,9 @@ class PlanWriter:
             )
             return resp.choices[0].message.content.strip()
         elif self.provider == "openai":
-            messages = [
-                LangChainSystemMessage(content=system_prompt),
+            resp = self.llm_client.invoke([
+                LCSystemMessage(content=system_prompt),
                 HumanMessage(content=user_message)
-            ]
-            resp = self.llm_client.invoke(messages)
+            ])
             return resp.content.strip()
-        else:
-            raise ValueError(f"Unknown provider: {self.provider}")
+        raise ValueError(f"Unknown provider: {self.provider}")

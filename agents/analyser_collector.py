@@ -5,9 +5,157 @@ date: 11/10/2025 (creation)
 """
 
 import os
+from typing import Optional, Literal
+
+from azure.ai.inference import ChatCompletionsClient
+from azure.ai.inference.models import SystemMessage, UserMessage
+from azure.core.credentials import AzureKeyCredential
+
+from dotenv import load_dotenv
+
+LANGCHAIN_AVAILABLE = False
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import SystemMessage as LangChainSystemMessage, HumanMessage
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    pass
+
+
+class UserRequestSummarizer:
+    """Summarize or extract keywords from a user request using Azure LLM."""
+    def __init__(
+        self, 
+        api_key: Optional[str] = None, 
+        endpoint: Optional[str] = "https://models.github.ai/inference", 
+        model: str = "gpt-4o-mini"
+    ):
+        load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
+        self.api_key = api_key or os.environ.get("GITHUB_APIKEY")
+        if not self.api_key:
+            raise ValueError("Azure API key missing ('GITHUB_APIKEY').")
+        self.llm_client = ChatCompletionsClient(
+            endpoint=endpoint or os.environ.get("AZURE_ENDPOINT", endpoint),
+            credential=AzureKeyCredential(self.api_key)
+        )
+        self.model = model
+
+    def summarize(self, user_request: str, prompt: Optional[str] = None) -> str:
+        """
+        Returns a condensed version (keywords) of the user request.
+        - prompt: custom system prompt, otherwise defaults to keyword extraction.
+        """
+        system_msg = prompt or "Extract only keywords from the user request."
+        resp = self.llm_client.complete(
+            messages=[SystemMessage(system_msg), UserMessage(user_request)],
+            model=self.model
+        )
+        return resp.choices[0].message.content.strip()
+
+
+class UserRequestFormatter:
+    """
+    Formats a user request (Azure or OpenAI/langchain),
+    extracts themes/keywords for semantic search.
+    Handles automatic fallback based on API keys.
+    """
+    def __init__(
+        self, 
+        provider: Literal["azure", "openai", "auto"] = "auto",
+        api_key: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        model: str = "gpt-4o-mini",
+        system_prompt: Optional[str] = None,
+        allow_fallback: bool = True
+    ):
+        load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
+        self.model = model
+        self.allow_fallback = allow_fallback
+        self.system_prompt = system_prompt or (
+            "You are a helpful assistant specialized in extracting themes and topics from user requests. "
+            "Give exhaustive but concise keywords, topics, and themes optimized for semantic vector search."
+        )
+
+        prov = provider if provider != "auto" else self._auto_provider()
+        # Initialize provider, fallback if needed
+        try:
+            if prov == "azure":
+                self._init_azure(api_key, endpoint)
+            elif prov == "openai":
+                self._init_openai(api_key)
+            else:
+                raise ValueError(f"Unknown provider: {prov}")
+            self.provider = prov
+        except (ValueError, ImportError) as e:
+            if allow_fallback and provider != "auto":
+                fallback = "openai" if prov == "azure" else "azure"
+                print(f"Warning: initializing {prov} failed ({e}), falling back to {fallback}")
+                try:
+                    if fallback == "azure":
+                        self._init_azure(None, endpoint)
+                    else:
+                        self._init_openai(None)
+                    self.provider = fallback
+                except Exception as fb_err:
+                    raise ValueError(
+                        f"Both providers failed. Azure: {e}, OpenAI: {fb_err}. "
+                        "Check your API keys (GITHUB_APIKEY/OPENAI_APIKEY)."
+                    ) from fb_err
+            else:
+                raise
+
+    def _auto_provider(self) -> str:
+        """Detects the available provider (Azure if possible, otherwise OpenAI)."""
+        if os.environ.get("GITHUB_APIKEY"):
+            return "azure"
+        if os.environ.get("OPENAI_APIKEY"):
+            return "openai"
+        raise ValueError("No API key found (GITHUB_APIKEY or OPENAI_APIKEY).")
+
+    def _init_azure(self, api_key: Optional[str], endpoint: Optional[str]):
+        self.api_key = api_key or os.environ.get("GITHUB_APIKEY")
+        if not self.api_key:
+            raise ValueError("Azure key missing ('GITHUB_APIKEY')")
+        self.llm_client = ChatCompletionsClient(
+            endpoint=endpoint or os.environ.get("AZURE_ENDPOINT", "https://models.github.ai/inference"),
+            credential=AzureKeyCredential(self.api_key)
+        )
+
+    def _init_openai(self, api_key: Optional[str]):
+        if not LANGCHAIN_AVAILABLE:
+            raise ImportError("langchain_openai is not installed.")
+        self.api_key = api_key or os.environ.get("OPENAI_APIKEY")
+        if not self.api_key:
+            raise ValueError("OpenAI key missing ('OPENAI_APIKEY')")
+        self.llm_client = ChatOpenAI(model=self.model, openai_api_key=self.api_key)
+
+    def format(self, user_request: str) -> str:
+        """Returns formatted request (themes/keywords) according to provider."""
+        if self.provider == "azure":
+            resp = self.llm_client.complete(
+                messages=[SystemMessage(self.system_prompt), UserMessage(user_request)],
+                model=self.model
+            )
+            return resp.choices[0].message.content.strip()
+        elif self.provider == "openai":
+            messages = [
+                LangChainSystemMessage(content=self.system_prompt),
+                HumanMessage(content=user_request)
+            ]
+            resp = self.llm_client.invoke(messages)
+            return resp.content.strip()
+        else:
+            raise ValueError(f"Unknown provider: {self.provider}")
+
 
 class AnalyserCollector:
-    def __init__(self, vector_db_client, top_k: int = 10, similarity_threshold: float = 0.3):
+    def __init__(
+        self, 
+        vector_db_client, 
+        top_k: int = 10, 
+        similarity_threshold: float = 0.3,
+        request_formatter: Optional[UserRequestFormatter] = None
+    ):
         """
         Initialize the analyser-collector.
 
@@ -15,24 +163,30 @@ class AnalyserCollector:
             vector_db_client: The vector database client
             top_k: Number of relevant articles to return
             similarity_threshold: Minimum similarity threshold (0.0 to 1.0)
+            request_formatter: Optional UserRequestFormatter to format user requests before search
         """
         self.vector_db_client = vector_db_client
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
+        self.request_formatter = request_formatter
 
-    def find_relevant_articles(self, user_request):
+    def find_relevant_articles(self, query):
         """
         Queries the vector database to find relevant articles.
         Args:
-            user_request (str): The user's input query.
+            query (str): The user's input query (will be formatted if formatter is set).
         Returns:
             list: List of relevant articles with their scores and metadata.
         """
         if self.vector_db_client is None:
             raise ValueError("VectorDBClient must be initialized")
+        
+        # Format the query if a formatter is provided
+        if self.request_formatter is not None:
+            query = self.request_formatter.format(query)
 
         results = self.vector_db_client.search(
-            query=user_request,
+            query=query,
             top_k=self.top_k,
             threshold=self.similarity_threshold
         )
@@ -79,13 +233,12 @@ class AnalyserCollector:
 
         return content
 
-    def corpus_context(self, user_request):
+    def corpus_context(self, query):
         """
         Returns a list of dictionaries [{article_title: content}]
         for each relevant article found via find_relevant_articles and save_content.
         """
-
-        articles = self.find_relevant_articles(user_request)
+        articles = self.find_relevant_articles(query)
 
         sources = [article['source'] for article in articles]
         contents = self.save_content(articles)
@@ -94,3 +247,16 @@ class AnalyserCollector:
         for source, content in zip(sources, contents):
             results.append({source: content})
         return results
+    
+    def process(self, user_request: str):
+        """
+        Process user request and return corpus context.
+        This method formats the request if a formatter is set, then finds relevant articles.
+        
+        Args:
+            user_request (str): The original user request.
+        
+        Returns:
+            list: List of dictionaries [{article_title: content}]
+        """
+        return self.corpus_context(user_request)

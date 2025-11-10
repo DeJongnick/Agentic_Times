@@ -11,7 +11,6 @@ from agents.plan_writer import PlanWriter
 def get_context(user_request):
     """
     Takes a user_request and returns (context, plan).
-    Optionally, a distinct plan_user_request can be used for the plan if needed.
     """
     formatter = UserRequestFormatter(
         provider="openai",

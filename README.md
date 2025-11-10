@@ -1,7 +1,3 @@
-Sure! Here’s your **Agentic-Times** project description fully translated into clear, professional English while keeping your structure and technical tone intact:
-
----
-
 # Agentic-Times
 
 Project developed as part of the **Designing Agentic Systems** course at **Les Mines Paris**.

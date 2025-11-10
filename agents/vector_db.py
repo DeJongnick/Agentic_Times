@@ -1,4 +1,5 @@
 """
+author: DeJongnick
 name: vector_db.py
 date: 11/10/2025 (creation)
 """

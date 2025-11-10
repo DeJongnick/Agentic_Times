@@ -1,12 +1,16 @@
-# interroge la base vectorielle pour trouver les articles pertinents et les enregistres comme contexte
-# input user_request
-# output articles contexte 
+"""
+author: DeJongnick
+name: analyser_collector.py
+date: 11/10/2025 (creation)
+"""
+
+import os
 
 class AnalyserCollector:
     def __init__(self, vector_db_client, top_k: int = 10, similarity_threshold: float = 0.3):
         """
         Initialize the analyser-collector.
-        
+
         Args:
             vector_db_client: The vector database client
             top_k: Number of relevant articles to return
@@ -26,15 +30,13 @@ class AnalyserCollector:
         """
         if self.vector_db_client is None:
             raise ValueError("VectorDBClient must be initialized")
-        
-        # Search in the vector database
+
         results = self.vector_db_client.search(
             query=user_request,
             top_k=self.top_k,
             threshold=self.similarity_threshold
         )
-        
-        # Group by article source (an article can have several relevant chunks)
+
         articles_dict = {}
         for result in results:
             source = result['source']
@@ -47,34 +49,48 @@ class AnalyserCollector:
                 }
             articles_dict[source]['chunks'].append(result)
             articles_dict[source]['max_score'] = max(articles_dict[source]['max_score'], result['score'])
-        
-        # Compute the average score for each article
+
         for source, article in articles_dict.items():
             scores = [chunk['score'] for chunk in article['chunks']]
             article['avg_score'] = sum(scores) / len(scores) if scores else 0.0
-        
-        # Sort by descending max score
+
         articles = sorted(articles_dict.values(), key=lambda x: x['max_score'], reverse=True)
-        
+
         return articles
 
-    def save_context(self, articles):
+    def save_content(self, articles):
         """
-        Enregistre les articles comme contexte.
+        Saves the content of the articles as context.
         Args:
-            articles (list): Liste d'articles à enregistrer.
-        """
-        # À implémenter
-        pass
-
-    def process(self, user_request):
-        """
-        Processus complet : trouve les articles pertinents et les enregistre.
-        Args:
-            user_request (str): La requête de l'utilisateur.
+            articles (list): List of articles to save.
         Returns:
-            list: Liste d'articles de contexte.
+            list: List of HTML contents of the existing articles.
         """
+        sources = [article['source'] for article in articles]
+        content = []
+        raw_path = "data/raw"
+
+        for source in sources:
+            file_path = os.path.join(raw_path, source)
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                content.append(text)
+
+        return content
+
+    def corpus_context(self, user_request):
+        """
+        Returns a list of dictionaries [{article_title: content}]
+        for each relevant article found via find_relevant_articles and save_content.
+        """
+
         articles = self.find_relevant_articles(user_request)
-        self.save_context(articles)
-        return articles
+
+        sources = [article['source'] for article in articles]
+        contents = self.save_content(articles)
+
+        results = []
+        for source, content in zip(sources, contents):
+            results.append({source: content})
+        return results

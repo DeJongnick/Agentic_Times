@@ -41,7 +41,9 @@ class DraftWriter:
             "You are an expert journalist and writer specialized in creating high-quality press articles. "
             "Your articles are well-structured, engaging, and follow professional journalistic standards. "
             "You write clear, informative content with proper formatting, including titles, subtitles, "
-            "paragraphs, and appropriate emphasis where needed."
+            "paragraphs, and appropriate emphasis where needed. "
+            "It is essential that all information and data published in the article cite their sources. "
+            "You must clearly indicate the origin/source of any referenced or paraphrased idea, notably by citing the articles provided in context (with source/filename if available)."
         )
         try:
             if self.provider == "azure":
@@ -91,7 +93,7 @@ class DraftWriter:
     def _articles_context(self, articles: Optional[list]) -> str:
         if not articles:
             return ""
-        context = ["Reference articles for context and inspiration:"]
+        context = ["Reference articles for context and inspiration (please cite these sources if used in your writing):"]
         for art in articles:
             for src, content in art.items():
                 preview = content[:2000] + "..." if len(content) > 2000 else content
@@ -127,6 +129,7 @@ class DraftWriter:
             "- Include engaging content that informs and captivates readers\n"
             "- Use appropriate journalistic style and tone\n"
             "- Incorporate information from context articles when relevant\n"
+            "- Explicitly cite sources (especially articles provided in context) each time a fact, quote, or idea is used from them (e.g. at minimum by referencing the source filename such as [source: EXAMPLE.txt] in the text or footnotes)\n"
             "- Be complete and ready for publication\n"
         )
         if comments:

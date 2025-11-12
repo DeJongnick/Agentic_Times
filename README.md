@@ -160,7 +160,7 @@ from agents import orchestrator
 request = "Write a 900-word analysis on the climate impact of urban freight in Europe."
 output_path = orchestrator.exe(
     user_request=request,
-    authors=["Nicolas Le Jeune"],
+    authors=["John Doe"],
     note_threshold=8.0,
     max_iter=5,
 )

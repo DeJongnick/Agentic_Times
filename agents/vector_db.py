@@ -26,9 +26,13 @@ class VectorDBClient:
             raw_dir: Path to the directory containing HTML files (optional, for loading text)
             model_name: Name of the sentence-transformers model to use
         """
+        # Convert to Path objects (keep as relative paths)
         self.embeddings_path = Path(embeddings_path)
         self.metadata_path = Path(metadata_path)
-        self.raw_dir = Path(raw_dir) if raw_dir else None
+        if raw_dir:
+            self.raw_dir = Path(raw_dir)
+        else:
+            self.raw_dir = None
         self.model_name = model_name
         
         # Load embeddings and metadata

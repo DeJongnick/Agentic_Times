@@ -6,6 +6,7 @@ date: 11/10/2025 (creation)
 
 import os
 from typing import Optional, Literal
+from pathlib import Path
 from dotenv import load_dotenv
 
 from agents.prompt_loader import load_prompt_config
@@ -35,7 +36,13 @@ class DraftWriter:
         system_prompt: Optional[str] = None,
         allow_fallback: bool = True
     ):
-        load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
+        # Get project root dynamically (parent of agents directory)
+        project_root = Path(__file__).parent.parent
+        env_path = project_root / ".venv" / ".env"
+        # Fallback to .env in project root if .venv/.env doesn't exist
+        if not env_path.exists():
+            env_path = project_root / ".env"
+        load_dotenv(dotenv_path=str(env_path))
         self.model = model
         self.provider = provider if provider != "auto" else self._detect_provider()
         self.allow_fallback = allow_fallback

@@ -2,7 +2,8 @@ from pathlib import Path
 import re
 from typing import Dict, Optional
 
-PROJECT_ROOT = Path("/Users/perso/Documents/Agents/Agentic_Times")
+# Get project root dynamically (parent of agents directory)
+PROJECT_ROOT = Path(__file__).parent.parent
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 
 _SECTION_PATTERN = re.compile(r"^\[\[(?P<section>[A-Za-z0-9_\-]+)\]\]\s*$")

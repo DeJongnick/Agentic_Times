@@ -14,6 +14,7 @@ from azure.core.credentials import AzureKeyCredential
 from dotenv import load_dotenv
 
 from agents.prompt_loader import load_prompt
+from pathlib import Path
 
 LANGCHAIN_AVAILABLE = False
 try:
@@ -39,7 +40,13 @@ class UserRequestFormatter:
         system_prompt: Optional[str] = None,
         allow_fallback: bool = True
     ):
-        load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
+        # Get project root dynamically (parent of agents directory)
+        project_root = Path(__file__).parent.parent
+        env_path = project_root / ".venv" / ".env"
+        # Fallback to .env in project root if .venv/.env doesn't exist
+        if not env_path.exists():
+            env_path = project_root / ".env"
+        load_dotenv(dotenv_path=str(env_path))
         self.model = model
         self.allow_fallback = allow_fallback
         default_prompt = (
@@ -194,13 +201,14 @@ class AnalyserCollector:
         """
         sources = [article['source'] for article in articles]
         content = []
-        raw_path = "data/raw"
+        # Get project root dynamically (parent of agents directory)
+        project_root = Path(__file__).parent.parent
+        raw_path = project_root / "data" / "raw"
 
         for source in sources:
-            file_path = os.path.join(raw_path, source)
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    text = f.read()
+            file_path = raw_path / source
+            if file_path.exists():
+                text = file_path.read_text(encoding="utf-8")
                 content.append(text)
 
         return content

@@ -3,8 +3,37 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-project_root = Path("/Users/perso/Documents/Agents/Agentic_Times")
-sys.path.insert(0, str(project_root))
+# Get project root dynamically (parent of agents directory)
+def _get_project_root():
+    """Get the project root directory dynamically."""
+    # First, try using current working directory (works for notebooks)
+    # This is the most reliable when running from a notebook
+    cwd = Path.cwd()
+    
+    # Check if we're in the ntb subdirectory
+    if cwd.name == "ntb":
+        project_root = cwd.parent
+        if (project_root / "agents").exists() and (project_root / "agents").is_dir():
+            return project_root
+    # Check if agents directory exists (we're in project root)
+    elif (cwd / "agents").exists() and (cwd / "agents").is_dir():
+        return cwd
+    
+    # Fallback: try using __file__ (when running as a script)
+    try:
+        script_root = Path(__file__).parent.parent
+        if (script_root / "agents").exists() and (script_root / "agents").is_dir():
+            return script_root
+    except NameError:
+        # __file__ doesn't exist (e.g., in interactive Python)
+        pass
+    
+    # Final fallback: assume current directory is project root
+    return cwd
+
+# Set initial project root for sys.path
+_project_root = _get_project_root()
+sys.path.insert(0, str(_project_root))
 
 from agents.vector_db import VectorDBClient
 from agents.analyser_collector import UserRequestFormatter, AnalyserCollector
@@ -32,16 +61,37 @@ def exe(
         note_threshold: Minimum acceptable critic score before stopping iterations.
         max_iter: Maximum number of draft/critique refinement loops.
     """
+    # Get project root dynamically (re-evaluate in case we're in a notebook)
+    project_root = _get_project_root()
+    
     formatter = UserRequestFormatter(
         provider="openai",
         model="gpt-4o-mini",
         allow_fallback=True
     )
 
-    ROOT = project_root
-    embeddings_path = ROOT / "data" / "vectors_base" / "embeddings.npy"
-    metadata_path = ROOT / "data" / "vectors_base" / "metadata.jsonl"
-    raw_dir = ROOT / "data" / "raw"
+    embeddings_path = project_root / "data" / "vectors_base" / "embeddings.npy"
+    metadata_path = project_root / "data" / "vectors_base" / "metadata.jsonl"
+    raw_dir = project_root / "data" / "raw"
+    
+    # Debug: print paths to help diagnose issues
+    print(f"Project root: {project_root}")
+    print(f"Embeddings path: {embeddings_path}")
+    print(f"Embeddings exists: {embeddings_path.exists()}")
+    
+    # Validate that required files exist before proceeding
+    if not embeddings_path.exists():
+        raise FileNotFoundError(
+            f"Embeddings file not found at: {embeddings_path}\n"
+            f"Current working directory: {Path.cwd()}\n"
+            f"Project root detected: {project_root}\n"
+            f"Please ensure the embeddings file exists or run the embeddings notebook first."
+        )
+    if not metadata_path.exists():
+        raise FileNotFoundError(
+            f"Metadata file not found at: {metadata_path}\n"
+            f"Please ensure the metadata file exists or run the embeddings notebook first."
+        )
 
     vector_db_client = VectorDBClient(
         embeddings_path=str(embeddings_path),

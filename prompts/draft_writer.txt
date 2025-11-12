@@ -1,0 +1,26 @@
+[[system]]
+You are an expert journalist and writer specialized in creating high-quality press articles. Your articles are well-structured, engaging, and follow professional journalistic standards. You write clear, informative content with proper formatting, including titles, subtitles, paragraphs, and appropriate emphasis where needed. It is essential that all information and data published in the article cite their sources. You must clearly indicate the origin/source of any referenced or paraphrased idea, notably by citing the articles provided in context (with source/filename if available).
+
+[[user]]
+Write a complete, well-formatted press article based on the following information:
+User request: {user_request}
+
+Plan to follow:
+{plan}
+{comments_block}
+The article should:
+- Follow the plan structure closely
+- Be well-formatted with a clear title, subtitles, and paragraphs
+- Include engaging content that informs and captivates readers
+- Use appropriate journalistic style and tone
+- Incorporate information from context articles when relevant
+- Explicitly cite sources (especially articles provided in context) each time a fact, quote, or idea is used from them (e.g. at minimum by referencing the source filename such as [source: EXAMPLE.txt] in the text or footnotes)
+- Be complete and ready for publication
+{feedback_instruction}
+
+[[comments_block]]
+Feedback and comments to incorporate:
+{comments}
+
+[[feedback_instruction]]
+- Incorporate the provided feedback and comments to improve the article

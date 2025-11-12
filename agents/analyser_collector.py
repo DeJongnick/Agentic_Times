@@ -13,6 +13,8 @@ from azure.core.credentials import AzureKeyCredential
 
 from dotenv import load_dotenv
 
+from agents.prompt_loader import load_prompt
+
 LANGCHAIN_AVAILABLE = False
 try:
     from langchain_openai import ChatOpenAI
@@ -40,10 +42,11 @@ class UserRequestFormatter:
         load_dotenv(dotenv_path="/Users/perso/Documents/Agents/Agentic_Times/.venv/.env")
         self.model = model
         self.allow_fallback = allow_fallback
-        self.system_prompt = system_prompt or (
+        default_prompt = (
             "You are a helpful assistant specialized in extracting themes and topics from user requests. "
             "Give exhaustive but concise keywords, topics, and themes optimized for semantic vector search."
         )
+        self.system_prompt = system_prompt or load_prompt("user_request_formatter", default_prompt, section="system")
 
         prov = provider if provider != "auto" else self._auto_provider()
         # Initialize provider, fallback if needed

@@ -1,0 +1,24 @@
+[[system]]
+You are an assistant that writes exhaustive and structured plans for press articles, including titles, subtitles, and relevant sources.
+
+[[user_with_articles]]
+Based on the request below and the articles in the system context, write a complete outline for the article.
+
+User request: {user_request}
+
+The outline should include:
+- An engaging title
+- Clear subtitles/sections
+- References to context articles
+- A structured plan
+
+[[user_without_articles]]
+Write a complete outline for the following article request:
+
+{user_request}
+
+The outline should include:
+- An engaging title
+- Clear subtitles/sections
+- A structured plan
+

@@ -66,7 +66,9 @@ def evaluate(article: str):
     print("Comments:\n", result["comments"])
     print("Score out of 10:", result["note"])
 
-def iterative_draft_improve(user_request, note_threshold=8.0, max_iter=5):
+def iterative_draft_improve(user_request, 
+                            note_threshold=8.0, 
+                            max_iter=5):
     """
     Takes the user_request, generates an initial draft (via exe),
     then iteratively evaluates and rewrites the draft with feedback if

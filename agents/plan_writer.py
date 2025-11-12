@@ -8,6 +8,8 @@ import os
 from typing import Optional, Literal
 from dotenv import load_dotenv
 
+from agents.prompt_loader import load_prompt_config
+
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
@@ -38,10 +40,34 @@ class PlanWriter:
         self.model = model
         self.provider = provider if provider != "auto" else self._detect_provider()
         self.allow_fallback = allow_fallback
-        self.base_system_prompt = system_prompt or (
-            "You are an assistant that writes exhaustive and structured plans for press articles, "
-            "including titles, subtitles, and relevant sources."
-        )
+        default_prompts = {
+            "system": (
+                "You are an assistant that writes exhaustive and structured plans for press articles, "
+                "including titles, subtitles, and relevant sources."
+            ),
+            "user_with_articles": (
+                "Based on the request below and the articles in the system context, "
+                "write a complete outline for the article.\n\n"
+                "User request: {user_request}\n\n"
+                "The outline should include:\n"
+                "- An engaging title\n"
+                "- Clear subtitles/sections\n"
+                "- References to context articles\n"
+                "- A structured plan"
+            ),
+            "user_without_articles": (
+                "Write a complete outline for the following article request:\n\n"
+                "{user_request}\n\n"
+                "The outline should include:\n"
+                "- An engaging title\n"
+                "- Clear subtitles/sections\n"
+                "- A structured plan"
+            ),
+        }
+        prompts = load_prompt_config("plan_writer", default_prompts)
+        self.base_system_prompt = system_prompt or prompts["system"]
+        self.user_with_articles_template = prompts["user_with_articles"]
+        self.user_without_articles_template = prompts["user_without_articles"]
         # Initialize LLM client
         try:
             if self.provider == "azure":
@@ -113,25 +139,9 @@ class PlanWriter:
             system_prompt += "\n\n" + self._articles_context(articles)
         # Build user message with or without articles context
         if articles:
-            user_message = (
-                f"Based on the request below and the articles in the system context, "
-                f"write a complete outline for the article.\n\n"
-                f"User request: {user_request}\n\n"
-                f"The outline should include:\n"
-                f"- An engaging title\n"
-                f"- Clear subtitles/sections\n"
-                f"- References to context articles\n"
-                f"- A structured plan"
-            )
+            user_message = self.user_with_articles_template.format(user_request=user_request)
         else:
-            user_message = (
-                f"Write a complete outline for the following article request:\n\n"
-                f"{user_request}\n\n"
-                f"The outline should include:\n"
-                f"- An engaging title\n"
-                f"- Clear subtitles/sections\n"
-                f"- A structured plan"
-            )
+            user_message = self.user_without_articles_template.format(user_request=user_request)
         # LLM call depending on provider
         if self.provider == "azure":
             resp = self.llm_client.complete(

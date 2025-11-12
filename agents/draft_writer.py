@@ -8,6 +8,8 @@ import os
 from typing import Optional, Literal
 from dotenv import load_dotenv
 
+from agents.prompt_loader import load_prompt_config
+
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
@@ -37,14 +39,42 @@ class DraftWriter:
         self.model = model
         self.provider = provider if provider != "auto" else self._detect_provider()
         self.allow_fallback = allow_fallback
-        self.base_system_prompt = system_prompt or (
+        default_prompts = {
+            "system": (
             "You are an expert journalist and writer specialized in creating high-quality press articles. "
             "Your articles are well-structured, engaging, and follow professional journalistic standards. "
             "You write clear, informative content with proper formatting, including titles, subtitles, "
             "paragraphs, and appropriate emphasis where needed. "
             "It is essential that all information and data published in the article cite their sources. "
             "You must clearly indicate the origin/source of any referenced or paraphrased idea, notably by citing the articles provided in context (with source/filename if available)."
-        )
+            ),
+            "user": (
+                "Write a complete, well-formatted press article based on the following information:\n"
+                "User request: {user_request}\n"
+                "\nPlan to follow:\n{plan}\n"
+                "{comments_block}"
+                "\nThe article should:\n"
+                "- Follow the plan structure closely\n"
+                "- Be well-formatted with a clear title, subtitles, and paragraphs\n"
+                "- Include engaging content that informs and captivates readers\n"
+                "- Use appropriate journalistic style and tone\n"
+                "- Incorporate information from context articles when relevant\n"
+                "- Explicitly cite sources (especially articles provided in context) each time a fact, quote, or idea is used from them (e.g. at minimum by referencing the source filename such as [source: EXAMPLE.txt] in the text or footnotes)\n"
+                "- Be complete and ready for publication\n"
+                "{feedback_instruction}"
+            ),
+            "comments_block": (
+                "\nFeedback and comments to incorporate:\n{comments}\n"
+            ),
+            "feedback_instruction": (
+                "- Incorporate the provided feedback and comments to improve the article\n"
+            ),
+        }
+        prompts = load_prompt_config("draft_writer", default_prompts)
+        self.base_system_prompt = system_prompt or prompts["system"]
+        self.user_template = prompts["user"]
+        self.comments_template = prompts["comments_block"]
+        self.feedback_instruction = prompts["feedback_instruction"]
         try:
             if self.provider == "azure":
                 self._init_azure(api_key, endpoint)
@@ -103,7 +133,8 @@ class DraftWriter:
     def _format_comments(self, comments: Optional[str]) -> str:
         if not comments:
             return ""
-        return f"\n\nFeedback and comments to incorporate:\n{comments}\n"
+        formatted = self.comments_template.format(comments=comments).strip()
+        return f"\n\n{formatted}\n"
 
     def write_draft(
         self,
@@ -115,28 +146,18 @@ class DraftWriter:
         system_prompt = self.base_system_prompt
         if articles_context:
             system_prompt += "\n\n" + self._articles_context(articles_context)
-        user_message_parts = [
-            "Write a complete, well-formatted press article based on the following information:\n"
-        ]
-        user_message_parts.append(f"User request: {user_request}\n")
-        user_message_parts.append(f"\nPlan to follow:\n{plan}\n")
+        comments_block = ""
+        feedback_instruction = ""
         if comments:
-            user_message_parts.append(self._format_comments(comments))
-        user_message_parts.append(
-            "\nThe article should:\n"
-            "- Follow the plan structure closely\n"
-            "- Be well-formatted with a clear title, subtitles, and paragraphs\n"
-            "- Include engaging content that informs and captivates readers\n"
-            "- Use appropriate journalistic style and tone\n"
-            "- Incorporate information from context articles when relevant\n"
-            "- Explicitly cite sources (especially articles provided in context) each time a fact, quote, or idea is used from them (e.g. at minimum by referencing the source filename such as [source: EXAMPLE.txt] in the text or footnotes)\n"
-            "- Be complete and ready for publication\n"
+            comments_block = self._format_comments(comments)
+            feedback_instruction = self.feedback_instruction
+        user_message = self.user_template.format(
+            user_request=user_request,
+            plan=plan,
+            comments_block=comments_block,
+            comments=comments or "",
+            feedback_instruction=feedback_instruction,
         )
-        if comments:
-            user_message_parts.append(
-                "- Incorporate the provided feedback and comments to improve the article\n"
-            )
-        user_message = "".join(user_message_parts)
         if self.provider == "azure":
             resp = self.llm_client.complete(
                 messages=[SystemMessage(system_prompt), UserMessage(user_message)],

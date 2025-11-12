@@ -8,6 +8,8 @@ import os
 from typing import Optional, Literal, Dict, Any
 from dotenv import load_dotenv
 
+from agents.prompt_loader import load_prompt_config
+
 try:
     from azure.ai.inference import ChatCompletionsClient
     from azure.ai.inference.models import SystemMessage, UserMessage
@@ -42,15 +44,37 @@ class CriticAgent:
         self.provider = provider if provider != "auto" else self._detect_provider()
         self.allow_fallback = allow_fallback
         # System prompt must be in English
-        self.base_system_prompt = system_prompt or (
-            "You are an experienced editor-in-chief tasked with evaluating and critiquing press articles. "
-            "You are objective, precise, encouraging, but demanding regarding quality of content and form. "
-            "Your feedback must include a structured analysis divided into two parts:\n"
-            "- strengths (successful aspects, qualities, positive points)\n"
-            "- improvements (weaknesses, areas to correct, suggestions for improvement)\n"
-            "Analyze the content, structure, style, clarity, and relevance. "
-            "Add an overall score out of 10 (decimals allowed)."
-        )
+        default_prompts = {
+            "system": (
+                "You are an experienced editor-in-chief tasked with evaluating and critiquing press articles. "
+                "You are objective, precise, encouraging, but demanding regarding quality of content and form. "
+                "Your feedback must include a structured analysis divided into two parts:\n"
+                "- strengths (successful aspects, qualities, positive points)\n"
+                "- improvements (weaknesses, areas to correct, suggestions for improvement)\n"
+                "Analyze the content, structure, style, clarity, and relevance. "
+                "Add an overall score out of 10 (decimals allowed)."
+            ),
+            "review_template": (
+                "Article to critique (in English):\n"
+                "{draft}\n"
+                "\nYour response MUST STRICTLY FOLLOW this JSON format (key, value):\n"
+                "{response_format}"
+            ),
+            "response_format": (
+                "{\n"
+                '  "comments": {\n'
+                '    "strengths": "Detailed list or paragraph of strengths, qualities, positive aspects, successes, etc.",\n'
+                '    "improvements": "Detailed list or paragraph of areas for improvement, flaws, corrections, suggestions"\n'
+                "  },\n"
+                '  "note": "Score out of 10, decimals allowed"\n'
+                "}\n"
+                "Return ONLY the JSON, without any additional text or comments outside the specified format. Respond in English ONLY."
+            ),
+        }
+        prompts = load_prompt_config("critic_agent", default_prompts)
+        self.base_system_prompt = system_prompt or prompts["system"]
+        self.review_template = prompts["review_template"]
+        self.response_format = prompts["response_format"]
         try:
             if self.provider == "azure":
                 self._init_azure(api_key, endpoint)
@@ -116,22 +140,11 @@ class CriticAgent:
         Use the LLM to generate structured comments and a score from the draft.
         The returned feedback and all prompt content are in English only.
         """
-        critique_prompt = (
-            self.base_system_prompt
-            + "\n\nArticle to critique (in English):\n"
-            + draft
-            + (
-                "\n\nYour response MUST STRICTLY FOLLOW this JSON format (key, value):\n"
-                "{\n"
-                '  "comments": {\n'
-                '    "strengths": "Detailed list or paragraph of strengths, qualities, positive aspects, successes, etc.",\n'
-                '    "improvements": "Detailed list or paragraph of areas for improvement, flaws, corrections, suggestions"\n'
-                '  },\n'
-                '  "note": "Score out of 10, decimals allowed"\n'
-                "}\n"
-                "Return ONLY the JSON, without any additional text or comments outside the specified format. Respond in English ONLY."
-            )
+        review_body = self.review_template.format(
+            draft=draft,
+            response_format=self.response_format
         )
+        critique_prompt = self.base_system_prompt + "\n\n" + review_body
         ai_response = None
         
         if self.provider == "azure":

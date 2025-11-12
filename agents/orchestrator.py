@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -9,10 +10,19 @@ from agents.analyser_collector import UserRequestFormatter, AnalyserCollector
 from agents.plan_writer import PlanWriter
 from agents.draft_writer import DraftWriter
 from agents.critic_agent import CriticAgent
+from agents.final_drafter import FinalDrafter
 
-def exe(user_request):
+
+def exe(
+    user_request: str,
+    note_threshold: float = 8.0,
+    max_iter: int = 5,
+) -> Path:
+
     """
-    Takes a user_request and returns the generated draft article.
+    Runs the full pipeline (analysis, plan, draft, critique) to produce a final
+    HTML article styled like The Guardian. The resulting file is saved under
+    `outputs/` with the article title as filename and the function returns the path.
     """
     formatter = UserRequestFormatter(
         provider="openai",
@@ -21,14 +31,14 @@ def exe(user_request):
     )
 
     ROOT = project_root
-    EMBEDDINGS_PATH = ROOT / "data" / "vectors_base" / "embeddings.npy"
-    METADATA_PATH = ROOT / "data" / "vectors_base" / "metadata.jsonl"
-    RAW_DIR = ROOT / "data" / "raw"
+    embeddings_path = ROOT / "data" / "vectors_base" / "embeddings.npy"
+    metadata_path = ROOT / "data" / "vectors_base" / "metadata.jsonl"
+    raw_dir = ROOT / "data" / "raw"
 
     vector_db_client = VectorDBClient(
-        embeddings_path=str(EMBEDDINGS_PATH),
-        metadata_path=str(METADATA_PATH),
-        raw_dir=str(RAW_DIR) if RAW_DIR.exists() else None
+        embeddings_path=str(embeddings_path),
+        metadata_path=str(metadata_path),
+        raw_dir=str(raw_dir) if raw_dir.exists() else None
     )
 
     analyser_collector = AnalyserCollector(
@@ -41,89 +51,24 @@ def exe(user_request):
     context = analyser_collector.corpus_context(user_request)
 
     plan_writer = PlanWriter(provider="openai", model="gpt-4o-mini")
-
     plan = plan_writer.format(
         user_request=user_request,
         articles=context
     )
 
-    writer = DraftWriter(provider="openai")
-    draft = writer.write_draft(user_request, plan, articles_context=context)
-
-    return draft
-
-def evaluate(article: str):
-    """
-    Evaluate the given article using the CriticAgent.
-    Prints the feedback comments and score.
-    """
-    from agents.critic_agent import CriticAgent
-
-    agent = CriticAgent(
-        provider="openai")
-
-    result = agent.review_draft(article)
-    print("Comments:\n", result["comments"])
-    print("Score out of 10:", result["note"])
-
-def iterative_draft_improve(user_request, 
-                            note_threshold=8.0, 
-                            max_iter=5):
-    """
-    Takes the user_request, generates an initial draft (via exe),
-    then iteratively evaluates and rewrites the draft with feedback if
-    the score is below the threshold, up to a maximum number of iterations.
-    Returns a dictionary with the number of iterations, the final result,
-    the final score, comments, plan, and context.
-    """
     writer = DraftWriter(provider="openai")
     critic = CriticAgent(provider="openai")
 
-    # Rebuild the entire process to have context and plan
-    formatter = UserRequestFormatter(
-        provider="openai",
-        model="gpt-4o-mini",
-        allow_fallback=True
-    )
-
-    ROOT = project_root
-    EMBEDDINGS_PATH = ROOT / "data" / "vectors_base" / "embeddings.npy"
-    METADATA_PATH = ROOT / "data" / "vectors_base" / "metadata.jsonl"
-    RAW_DIR = ROOT / "data" / "raw"
-
-    vector_db_client = VectorDBClient(
-        embeddings_path=str(EMBEDDINGS_PATH),
-        metadata_path=str(METADATA_PATH),
-        raw_dir=str(RAW_DIR) if RAW_DIR.exists() else None
-    )
-
-    analyser_collector = AnalyserCollector(
-        vector_db_client=vector_db_client,
-        top_k=6,
-        similarity_threshold=0.3,
-        request_formatter=formatter
-    )
-
-    context = analyser_collector.corpus_context(user_request)
-
-    plan_writer = PlanWriter(provider="openai", model="gpt-4o-mini")
-
-    plan = plan_writer.format(
-        user_request=user_request,
-        articles=context
-    )
-
     draft = writer.write_draft(user_request, plan, articles_context=context)
-    result = critic.review_draft(draft)
-    score = result.get("note", 0) if result.get("note") is not None else 0
-    comments = result.get("comments", {})
+    review = critic.review_draft(draft)
+    score = review.get("note", 0) if review.get("note") is not None else 0
+    comments = review.get("comments", {})
 
-    i = 1
-    while score < note_threshold and i < max_iter:
-        # Use critic feedback to improve the article
-        i += 1
+    iterations = 1
+    while score < note_threshold and iterations < max_iter:
+        iterations += 1
         feedback = (
-            "Strengths:\n" + str(comments.get("strengths", "")) + "\n\n" +
+            "Strengths:\n" + str(comments.get("strengths", "")) + "\n\n"
             "Areas for improvement:\n" + str(comments.get("improvements", ""))
         )
         draft = writer.write_draft(
@@ -132,15 +77,24 @@ def iterative_draft_improve(user_request,
             articles_context=context,
             comments=feedback
         )
-        result = critic.review_draft(draft)
-        score = result.get("note", 0) if result.get("note") is not None else 0
-        comments = result.get("comments", {})
+        review = critic.review_draft(draft)
+        score = review.get("note", 0) if review.get("note") is not None else 0
+        comments = review.get("comments", {})
 
-    return {
-        "iterations": i,
-        "final_draft": draft,
-        "final_score": score,
-        "comments": comments,
-        "plan": plan,
-        "context": context
-    }
+    title_match = re.search(r"\[title\]\s*(.+)", draft or "")
+    title = (title_match.group(1).strip() if title_match else "article") or "article"
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "article"
+
+    final_drafter = FinalDrafter()
+    final_html = final_drafter.finalize_draft(
+        draft,
+        comments=comments,
+        note=score,
+    )
+
+    output_dir = project_root / "outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{slug}.html"
+    output_path.write_text(final_html, encoding="utf-8")
+
+    return output_path

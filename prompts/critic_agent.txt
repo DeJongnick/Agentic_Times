@@ -16,7 +16,7 @@ Your response MUST STRICTLY FOLLOW this JSON format (key, value):
   "comments": {
     "strengths": "Detailed list or paragraph of strengths, qualities, positive aspects, successes, etc.",
     "improvements": "Detailed list or paragraph of areas for improvement, flaws, corrections, suggestions",
-    "structure": "Each section should be visualy present ([title], [subtitles], [paragraphs])
+    "structure": "Assess whether the draft strictly prefixes the main title with [title], each subtitle with [subtitle], and every paragraph with [paragraph]"
   },
   "note": "Score out of 10, decimals allowed"
 }

@@ -19,6 +19,6 @@ Write a complete outline for the following article request:
 
 The outline should include:
 - An engaging title
-- Clear subtitles/sections
+- Clear subtitles/sections with paragraphs
 - A structured plan
 

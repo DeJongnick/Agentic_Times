@@ -15,7 +15,8 @@ Your response MUST STRICTLY FOLLOW this JSON format (key, value):
 {
   "comments": {
     "strengths": "Detailed list or paragraph of strengths, qualities, positive aspects, successes, etc.",
-    "improvements": "Detailed list or paragraph of areas for improvement, flaws, corrections, suggestions"
+    "improvements": "Detailed list or paragraph of areas for improvement, flaws, corrections, suggestions",
+    "structure": "Each section should be visualy present ([title], [subtitles], [paragraphs])
   },
   "note": "Score out of 10, decimals allowed"
 }

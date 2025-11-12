@@ -80,7 +80,7 @@ Agentic_Times/
 │   └── embeddings.ipynb        # tokenisation + embeddings export
 ├── outputs/                    # generated HTML stories
 ├── prompts/                    # editable prompt packs (TXT)
-├── test.ipynb                  # exploratory runs / smoke tests
+├── exe.ipynb                  # exploratory runs / smoke tests
 └── requirements.txt            # pinned dependencies (Python 3.10+)
 ```
 
@@ -201,7 +201,7 @@ You are the house style editor for Agentic Times...
 - Prioritise the latest critic feedback when conflicts appear.
 ```
 
-To experiment quickly, fork the notebook `test.ipynb` and run cells that call individual agents with custom prompt tweaks.
+To experiment quickly, fork the notebook `exe.ipynb` and run cells that call individual agents with custom prompt tweaks.
 
 ---
 
@@ -218,7 +218,7 @@ To experiment quickly, fork the notebook `test.ipynb` and run cells that call in
 
 1. **Branching** – Create a feature branch before modifying prompts or agents.
 2. **Corpus changes** – Keep Guardian HTML files out of version control if they derive from licensed content.
-3. **Testing** – Use `test.ipynb` or craft script-level smoke tests (none are provided yet). Consider adding unit tests for prompt parsing or vector search.
+3. **Testing** – Use `exe.ipynb` or craft script-level smoke tests (none are provided yet). Consider adding unit tests for prompt parsing or vector search.
 4. **Provider parity** – When possible, test with both Azure GitHub Models and OpenAI to ensure prompts work across providers.
 5. **Style** – Prompts should stay English to align with critic scoring, even if final articles are in other languages.
 

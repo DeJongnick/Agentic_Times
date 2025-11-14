@@ -45,8 +45,8 @@ from agents.final_drafter import FinalDrafter
 
 def exe(
     user_request: str,
-    authors: list[str] | None = 'Nicolas Le Jeune',
-    note_threshold: float = 8.0,
+    authors: list[str] | None = 'John Doe',
+    note_threshold: float = 9.0,
     max_iter: int = 5,
 ) -> Path:
 
